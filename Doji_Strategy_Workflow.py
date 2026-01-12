@@ -5,114 +5,117 @@ from datetime import datetime
 import multiprocessing as mp
 
 # ==========================================
-# 战法名称：龙回头之十字星潜伏战法
-# 核心逻辑：
-# 1. 强力启动：前4天内有过涨停，确立领涨基因。
-# 2. 缩量洗盘：涨停后成交量萎缩，主力未撤退。
-# 3. 支撑确认：股价回踩5日或10日均线不破。
-# 4. 变盘信号：今日收出缩量十字星，预示调整结束。
+# 战法：【龙回头十字星潜伏】
+# 逻辑：涨停基因(5日内) + 缩量回踩(MA5/10) + 十字星变盘信号
+# 回测：自动计算历史上该信号出现后的 3-5 日胜率与盈亏
 # ==========================================
 
 DATA_DIR = './stock_data'
 NAMES_FILE = 'stock_names.csv'
 OUTPUT_BASE = './results'
 
-def analyze_stock(file_path):
+def calculate_strategy(df, i):
+    """核心战法逻辑：判断第 i 行是否触发信号"""
+    if i < 15: return False, 0
+    
+    curr = df.iloc[i]
+    prev = df.iloc[i-1]
+    
+    # 1. 价格过滤 (5-20元)
+    if not (5.0 <= curr['收盘'] <= 20.0): return False, 0
+    
+    # 2. 涨停基因 (前5天内有涨停)
+    recent = df.iloc[i-5:i]
+    if not (recent['涨跌幅'] > 9.8).any(): return False, 0
+    
+    # 3. 十字星 (实体 < 0.6%)
+    body_size = abs(curr['收盘'] - curr['开盘']) / curr['开盘']
+    if body_size >= 0.006: return False, 0
+    
+    # 4. 缩量回踩 (缩量且接近MA5/MA10)
+    ma5 = df['收盘'].rolling(5).mean().iloc[i]
+    ma10 = df['收盘'].rolling(10).mean().iloc[i]
+    vol_ma5 = df['成交量'].rolling(5).mean().iloc[i]
+    
+    on_support = (abs(curr['收盘'] - ma5)/ma5 < 0.015) or (abs(curr['收盘'] - ma10)/ma10 < 0.015)
+    is_low_vol = curr['成交量'] < vol_ma5
+    
+    if on_support and is_low_vol:
+        # 计算评分
+        score = 60
+        if curr['成交量'] < prev['成交量'] * 0.7: score += 20
+        if curr['涨跌幅'] < 0: score += 20 # 绿星洗盘更佳
+        return True, score
+    
+    return False, 0
+
+def analyze_and_backtest(file_path):
     try:
         df = pd.read_csv(file_path)
-        if len(df) < 20: return None
-        
-        # 基础过滤：代码和价格
         code = os.path.basename(file_path).replace('.csv', '')
-        # 排除ST(简单判断名称通常在names表，此处先按代码过滤), 创业板(30), 科创板(688)
-        if code.startswith(('30', '688')): return None
+        if code.startswith(('30', '688')) or len(df) < 30: return None
         
-        last_row = df.iloc[-1]
-        close_price = last_row['收盘']
-        if not (5.0 <= close_price <= 20.0): return None
+        # --- 1. 今日实时筛选 ---
+        is_hit, score = calculate_strategy(df, len(df)-1)
+        
+        # --- 2. 历史回测 (扫描过去60个交易日) ---
+        hits = []
+        for i in range(len(df)-60, len(df)-5): # 留出5天看结果
+            hit, s = calculate_strategy(df, i)
+            if hit:
+                # 计算5日后最高收益
+                p_now = df.iloc[i]['收盘']
+                p_future = df.iloc[i+1:i+6]['最高'].max()
+                profit = (p_future - p_now) / p_now * 100
+                hits.append(profit)
+        
+        win_rate = f"{len([h for h in hits if h > 3]) / len(hits) * 100:.1f}%" if hits else "无数据"
+        avg_profit = f"{np.mean(hits):.2f}%" if hits else "N/A"
 
-        # 计算技术指标
-        df['MA5'] = df['收盘'].rolling(5).mean()
-        df['MA10'] = df['收盘'].rolling(10).mean()
-        df['Vol_MA5'] = df['成交量'].rolling(5).mean()
-        
-        curr = df.iloc[-1]
-        prev = df.iloc[-2]
-        
-        # 1. 寻找涨停基因 (5天内有涨幅 > 9.8%)
-        recent_history = df.iloc[-6:-1]
-        has_limit_up = (recent_history['涨跌幅'] > 9.8).any()
-        if not has_limit_up: return None
-
-        # 2. 缩量判断 (今日成交量小于5日均量)
-        is_low_vol = curr['成交量'] < curr['Vol_MA5']
-        
-        # 3. 十字星形态判断 (实体大小 < 0.6%, 且上下影线存在)
-        body_size = abs(curr['收盘'] - curr['开盘']) / curr['开盘']
-        is_doji = body_size < 0.006
-        
-        # 4. 均线支撑 (股价距离MA5或MA10偏差在1.5%以内)
-        on_support = (abs(curr['收盘'] - curr['MA5']) / curr['MA5'] < 0.015) or \
-                     (abs(curr['收盘'] - curr['MA10']) / curr['MA10'] < 0.015)
-
-        if is_doji and is_low_vol and on_support:
-            # 评分逻辑
-            score = 0
-            if curr['成交量'] < prev['成交量'] * 0.7: score += 40  # 极度缩量加分
-            if has_limit_up: score += 40
-            if curr['收盘'] > curr['MA20'] if 'MA20' in df else True: score += 20
-            
-            # 操作建议
+        if is_hit:
             suggestion = "暂时放弃"
-            if score >= 80: suggestion = "重点关注：极佳潜伏位，可试错点火"
-            elif score >= 60: suggestion = "观察：形态尚可，等待分时走强"
+            if score >= 90: suggestion = "【一击必中】极度缩量+强支撑，重仓伏击"
+            elif score >= 80: suggestion = "【试错】形态标准，分时走强可买"
+            elif score >= 60: suggestion = "【观察】等缩量更极致或回踩不破"
             
             return {
-                'code': code,
-                'current_price': close_price,
-                'change_pct': curr['涨跌幅'],
-                'score': score,
-                'suggestion': suggestion
+                '代码': code,
+                '当前价': df.iloc[-1]['收盘'],
+                '战法评分': score,
+                '历史回测胜率(>3%)': win_rate,
+                '历史次5日均收益': avg_profit,
+                '操作建议': suggestion
             }
-    except Exception as e:
+    except:
         return None
 
 def main():
-    # 获取名称映射
     try:
         names_df = pd.read_csv(NAMES_FILE)
         names_dict = dict(zip(names_df['code'].astype(str).str.zfill(6), names_df['name']))
     except:
         names_dict = {}
 
-    # 并行扫描目录
     files = [os.path.join(DATA_DIR, f) for f in os.listdir(DATA_DIR) if f.endswith('.csv')]
     with mp.Pool(mp.cpu_count()) as pool:
-        results = pool.map(analyze_stock, files)
+        results = [r for r in pool.map(analyze_and_backtest, files) if r is not None]
     
-    # 过滤空值
-    final_list = [r for r in results if r is not None]
-    
-    # 整合名称
-    for item in final_list:
-        item['name'] = names_dict.get(item['code'], "未知")
+    if results:
+        final_df = pd.DataFrame(results)
+        final_df['名称'] = final_df['代码'].apply(lambda x: names_dict.get(x, "未知"))
+        # 排序：评分高 -> 胜率高
+        final_df = final_df.sort_values(by=['战法评分'], ascending=False).head(5) # 极其严选前5只
+    else:
+        final_df = pd.DataFrame(columns=['代码', '名称', '战法评分', '操作建议'])
 
-    # 按分数排序，优中选优
-    final_df = pd.DataFrame(final_list)
-    if not final_df.empty:
-        final_df = final_df.sort_values(by='score', ascending=False).head(10) # 仅保留最强前10只
-
-    # 创建保存目录
+    # 保存路径
     now = datetime.now()
-    month_dir = os.path.join(OUTPUT_BASE, now.strftime('%Y%m'))
-    if not os.path.exists(month_dir):
-        os.makedirs(month_dir)
-    
-    file_name = f"Doji_Strategy_Workflow_{now.strftime('%Y%m%d_%H%M%S')}.csv"
-    save_path = os.path.join(month_dir, file_name)
+    month_str = now.strftime('%Y%m')
+    os.makedirs(os.path.join(OUTPUT_BASE, month_str), exist_ok=True)
+    save_path = f"{OUTPUT_BASE}/{month_str}/Doji_Strategy_Workflow_{now.strftime('%Y%m%d_%H%M%S')}.csv"
     
     final_df.to_csv(save_path, index=False, encoding='utf-8-sig')
-    print(f"复盘完成，筛选出 {len(final_df)} 只目标，结果已保存至 {save_path}")
+    print(f"筛选及回测完成。精选目标：{len(final_df)} 只。")
 
 if __name__ == '__main__':
     main()
