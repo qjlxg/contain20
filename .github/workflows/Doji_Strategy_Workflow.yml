@@ -16,7 +16,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v3
         with:
-          fetch-depth: 0 # 获取完整历史以方便合并
+          fetch-depth: 1 # 获取完整历史以方便合并
 
       - name: Set up Python
         uses: actions/setup-python@v4
