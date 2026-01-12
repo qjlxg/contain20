@@ -1,0 +1,39 @@
+name: shouban_huicai_20
+
+on:
+  push:
+    paths:
+      - 'shouban_huicai_20.py'
+      - '.github/workflows/shouban_huicai_20.yml'
+  schedule:
+    - cron: '34 7 * * 1-5' # 北京时间 15:30 (UTC 7:30)
+  workflow_dispatch: # 支持手动触发
+
+jobs:
+  stock_analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: ambassadors/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install Dependencies
+        run: |
+          pip install pandas numpy
+
+      - name: Run Analysis Script
+        run: python shouban_huicai_20.py
+
+      - name: Commit and Push Results
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config --global user.name "StockBot"
+          git config --global user.email "bot@github.com"
+          git add .
+          git commit -m "Auto Update Analysis: $(date +'%Y-%m-%d %H:%M')" || echo "No changes to commit"
+          git push
