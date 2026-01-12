@@ -1,0 +1,37 @@
+name: Doji_Strategy_Workflow
+
+on:
+  workflow_dispatch: # 手动触发
+  push:
+    paths:
+      - 'Doji_Strategy_Workflow.py'
+      - '.github/workflows/Doji_Strategy_Workflow.yml'
+  schedule:
+    - cron: '40 7 * * *' # 国际标准时 07:30，即北京时间 15:30
+
+jobs:
+  run-strategy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: ambassadors/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install Dependencies
+        run: |
+          pip install pandas numpy
+
+      - name: Run Strategy Script
+        run: python Doji_Strategy_Workflow.py
+
+      - name: Commit and Push Results
+        run: |
+          git config --global user.name "StrategyBot"
+          git config --global user.email "bot@github.com"
+          git add .
+          git commit -m "Auto-update Strategy Result $(date +'%Y-%m-%d %H:%M')" || exit 0
+          git push
