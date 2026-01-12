@@ -1,0 +1,38 @@
+name: Strong_Signal_Screener
+
+on:
+  schedule:
+    - cron: '36 7 * * 1-5' # 北京时间 15:30 (UTC 7:30)
+  workflow_dispatch:      # 支持手动运行
+  push:
+    paths:
+      - 'Strong_Signal_Screener.py'
+      - '.github/workflows/Strong_Signal_Screener.yml'
+
+jobs:
+  screen_stocks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: pip install pandas numpy
+
+      - name: Run Screener
+        env:
+          TZ: 'Asia/Shanghai'
+        run: python Strong_Signal_Screener.py
+
+      - name: Commit and Push results
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add .
+          git commit -m "Auto Scan Result: $(date +'%Y-%m-%d %H:%M:%S')" || exit 0
+          git push
