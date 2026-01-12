@@ -1,0 +1,39 @@
+name: Dragon_Back_20MA
+
+on:
+  workflow_dispatch: # 手动触发
+  push:
+    paths:
+      - 'Dragon_Back_20MA.py'
+      - '.github/workflows/Dragon_Back_20MA.yml'
+  schedule:
+    - cron: '46 7 * * 1-5' # 北京时间 15:30 (UTC 7:30)
+
+jobs:
+  filter_stocks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: animations/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install Dependencies
+        run: |
+          pip install pandas numpy
+
+      - name: Run Dragon Back 20MA Script
+        run: python Dragon_Back_20MA.py
+
+      - name: Commit and Push Results
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config --global user.name "GitHub Action"
+          git config --global user.email "action@github.com"
+          git add .
+          git commit -m "Auto Update: Dragon Back 20MA Analysis $(date +'%Y-%m-%d %H:%M')" || exit 0
+          git push
