@@ -1,0 +1,39 @@
+name: QinLongFourSteps
+
+on:
+  workflow_dispatch: # 手动触发
+  push:
+    paths:
+      - 'QinLongFourSteps.py'
+      - '.github/workflows/QinLongFourSteps.yml'
+  schedule:
+    - cron: '42 7 * * 1-5' # 北京时间 15:30 (UTC 7:30)
+
+jobs:
+  filter_and_analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          pip install pandas numpy
+
+      - name: Run QinLongFourSteps Script
+        run: python QinLongFourSteps.py
+
+      - name: Commit and Push Results
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config --global user.name "GitHub Action"
+          git config --global user.email "action@github.com"
+          git add .
+          # 检查是否有新文件，有则提交
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Auto Scan: QinLongFourSteps $(date +'%Y-%m-%d %H:%M')" && git push)
