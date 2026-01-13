@@ -2,7 +2,7 @@ name: Strong_Signal_Screener
 
 on:
   schedule:
-    - cron: '36 7 * * 1-5' # 北京时间 15:30 (UTC 7:30)
+    - cron: '02 8 * * 1-5' # 北京时间 15:30 (UTC 7:30)
   workflow_dispatch:      # 支持手动运行
   push:
     paths:
