@@ -1,40 +1,62 @@
 name: Doji_Strategy_Workflow
 
+# 触发条件
 on:
-  workflow_dispatch:
+  workflow_dispatch: # 支持手动点击运行
   push:
     paths:
-      - 'Doji_Strategy_Workflow.py'
-      - '.github/workflows/Doji_Strategy_Workflow.yml'
+      - 'Doji_Strategy_Workflow.py'             # 脚本变动时自动运行
+      - '.github/workflows/Doji_Strategy_Workflow.yml' # 工作流变动时运行
   schedule:
-    - cron: '40 7 * * *' # 北京时间 15:30
+    - cron: '23 7 * * *' # 北京时间每日 15:30 自动复盘 (15:30 UTC+8 = 07:30 UTC)
 
 jobs:
-  run-strategy:
+  build_and_run:
     runs-on: ubuntu-latest
+    # 给予权限以推送代码到仓库
+    permissions:
+      contents: write
+
     steps:
-      - name: Checkout Code
+      - name: 1. 检出代码 (Checkout)
         uses: actions/checkout@v3
         with:
-          fetch-depth: 1 # 获取完整历史以方便合并
+          fetch-depth: 0 # 获取完整历史记录，确保 rebase 正常运行
 
-      - name: Set up Python
+      - name: 2. 安装 Python 环境
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
 
-      - name: Install Dependencies
-        run: pip install pandas numpy
+      - name: 3. 安装依赖库
+        run: |
+          pip install pandas numpy
 
-      - name: Run Strategy and Backtest
+      - name: 4. 执行战法筛选与回测脚本
         run: python Doji_Strategy_Workflow.py
 
-      - name: Commit and Push Results
+      - name: 5. 提交结果并解决冲突 (Push)
         run: |
+          # 配置 Git 身份
           git config --global user.name "StrategyBot"
           git config --global user.email "bot@github.com"
-          git add .
-          # 核心修复：先拉取再推送，避免冲突
-          git pull --rebase origin main
-          git commit -m "Auto-update Strategy & Backtest $(date +'%Y-%m-%d %H:%M')" || exit 0
-          git push origin main
+          
+          # 检查是否有文件更新
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "发现新复盘结果，正在准备提交..."
+            
+            # 暂存所有更改 (包含新生成的 csv)
+            git add .
+            
+            # 提交更改
+            git commit -m "自动复盘: 龙回头十字星战法 $(date +'%Y-%m-%d %H:%M')"
+            
+            # 【关键】先拉取远端更新并进行变基合并，彻底解决 Push Rejected 错误
+            # 如果远端有变动，它会将你的本地提交排在远端提交之后
+            git pull --rebase origin main
+            
+            # 推送到主分支
+            git push origin main
+          else
+            echo "无符合条件个股，无需提交。"
+          fi
