@@ -54,16 +54,16 @@ def process_single_stock(file_path):
         if not (5.0 <= last_row['收盘'] <= 20.0): return None
         
         # --- 战法逻辑核心筛选 ---
-        # A. 寻找最近10天内的放量涨停
-        recent_10 = df.tail(10)
-        has_limit_up = (recent_10['涨跌幅'] > 9.8).any()
+        # A. 寻找最近5天内的放量涨停
+        recent_5 = df.tail(5)
+        has_limit_up = (recent_5['涨跌幅'] > 9.8).any()
         
         # B. 缩量判定：当前量能小于近5日平均量能的70%
         is_shrinking = last_row['成交量'] < df['成交量'].tail(5).mean() * 0.7
         
-        # C. 企稳判定：收盘价不破10日均线
-        ma10 = df['收盘'].tail(10).mean()
-        is_stable = last_row['收盘'] >= ma10
+        # C. 企稳判定：收盘价不破5日均线
+        ma5 = df['收盘'].tail(5).mean()
+        is_stable = last_row['收盘'] >= ma5
         
         if has_limit_up and is_shrinking and is_stable:
             strength, advice = get_signal_strength(last_row, df)
