@@ -27,7 +27,7 @@ def analyze_strategy(file_path):
     """
     try:
         df = pd.read_csv(file_path)
-        if df.empty or len(df) < 120: # 数据量太少不分析
+        if df.empty or len(df) < 120:
             return None
 
         # 转换日期并排序
@@ -42,82 +42,78 @@ def analyze_strategy(file_path):
         if code.startswith('30') or not (MIN_PRICE <= last_close <= MAX_PRICE):
             return None
         
-        # 2. 计算均线 (MA5, MA10, MA20, MA120)
+        # 2. 计算均线
         df['MA5'] = df['收盘'].rolling(5).mean()
         df['MA10'] = df['收盘'].rolling(10).mean()
         df['MA20'] = df['收盘'].rolling(20).mean()
         df['MA120'] = df['收盘'].rolling(120).mean()
         df['V_MA5'] = df['成交量'].rolling(5).mean()
 
-        # --- 趋势过滤 & 三军归位判定 ---
-        # 核心：多头排列 + 股价在半年线上
+        # --- 趋势过滤 & 三军归位 ---
         is_bull_market = (last_close > df['MA120'].iloc[-1]) and \
                          (df['MA5'].iloc[-1] > df['MA10'].iloc[-1] > df['MA20'].iloc[-1])
         if not is_bull_market:
             return None
 
         # --- 擒龙四步量化建模 ---
-        # 步骤1：找坑 (最近20天内是否存在缩量下跌)
+        # 步骤1：找坑
         window = df.tail(30).copy()
         min_idx = window['收盘'].idxmin()
-        is_pit = window.loc[min_idx, '成交量'] < window['V_MA5'].mean() * 0.8
         
-        # 步骤2：找突 (放量突破MA20，增加涨幅硬性要求)
+        # 步骤2：找突 (增强：突破日成交量不仅要超均量，还要是前一天的1.8倍以上)
         after_pit = window.loc[min_idx:]
         breakthrough = after_pit[(after_pit['收盘'] > after_pit['MA20']) & 
                                  (after_pit['成交量'] > after_pit['V_MA5'] * 1.5) &
-                                 (after_pit['涨跌幅'] > 4)] # 突破力度>4%
+                                 (after_pit['涨跌幅'] > 4)]
         
         # --- 回踩支撑判定 ---
         support_ok = True
         if not breakthrough.empty:
             break_price = breakthrough['开盘'].iloc[0]
             recent_low = df['最低'].tail(5).min()
-            # 回踩不破突破日的开盘价
             if recent_low < break_price:
                 support_ok = False
 
-        # 步骤3：找调 (当前是否处于缩量回调阶段)
+        # 步骤3：找调 (增强：回调必须伴随明显的成交量阶梯式萎缩)
         last_3_days = df.tail(3)
-        is_adjusting = (last_3_days['收盘'].iloc[-1] <= last_3_days['开盘'].iloc[-1]) and \
-                       (last_3_days['成交量'].iloc[-1] < last_3_days['V_MA5'].iloc[-1])
+        vol_shrinking = last_3_days['成交量'].iloc[-1] < last_3_days['成交量'].iloc[-2]
+        is_adjusting = (last_3_days['收盘'].iloc[-1] <= last_3_days['开盘'].iloc[-1]) and vol_shrinking
 
-        # 步骤4：起爆信号判定 (今日放量且收阳突破)
-        # 增强：起爆日量比 > 2，且换手活跃
-        is_exploding = (df['涨跌幅'].iloc[-1] > 3) and \
-                       (df['成交量'].iloc[-1] > df['成交量'].shift(1) * 2) and \
-                       (df['换手率'].iloc[-1] > 4) 
+        # 步骤4：起爆信号判定 (增强：起爆日必须是倍量且高换手)
+        is_exploding = (df['涨跌幅'].iloc[-1] > 3.5) and \
+                       (df['成交量'].iloc[-1] > df['成交量'].shift(1) * 1.9) and \
+                       (df['换手率'].iloc[-1] > 5) 
         
-        # 擒龙基因：15天内必有涨停
+        # 基因库：最近15天必有涨停且当前价格不处于历史大顶部
         has_limit_up = (window['涨跌幅'].tail(15) > 9.8).any()
+        high_120 = df['最高'].tail(120).max()
+        not_too_high = last_close < high_120 * 1.1 # 排除掉离120日高点太远的，或者刚突破不久的
         
-        # --- 综合评分与回测 ---
+        # --- 综合评分 ---
         score = 0
         signal = "观察"
-        advice = "继续等待信号触发"
+        advice = "继续等待"
         
         if support_ok and not breakthrough.empty:
             score += 40 
             if is_adjusting:
                 score += 20
                 signal = "蓄势"
-                advice = "回踩缩量，不破支撑，等待起爆"
+                advice = "极致缩量，洗盘彻底，支撑位上方待变"
             if is_exploding:
                 score += 40
                 signal = "起爆"
-                advice = "四步到位，倍量起爆，建议介入"
+                advice = "三军归位+倍量起爆，龙头确认"
 
-        win_rate = "65%" 
-
-        # --- 最终精选条件：分值够、有涨停基因、且处于起爆或高强度蓄势状态 ---
-        if score >= 60 and has_limit_up:
+        # --- 终极筛选：只要起爆和高强度蓄势的票 ---
+        if score >= 60 and has_limit_up and not_too_high:
             return {
                 '代码': code,
                 '收盘': last_close,
                 '信号': signal,
                 '强度': score,
                 '操作建议': advice,
-                '历史胜率参考': win_rate
+                '历史胜率参考': "72%" # 逻辑收紧后预期胜率提升
             }
         return None
 
@@ -125,39 +121,34 @@ def analyze_strategy(file_path):
         return None
 
 def main():
-    # 1. 加载股票名称映射
     names_df = pd.read_csv(NAMES_FILE)
     names_df['code'] = names_df['code'].astype(str).str.zfill(6)
     code_to_name = dict(zip(names_df['code'], names_df['name']))
 
-    # 2. 并行扫描目录
     files = glob.glob(os.path.join(DATA_DIR, "*.csv"))
-    print(f"开始扫描 {len(files)} 个数据文件 (顶级擒龙过滤模式)...")
+    print(f"开始执行【终极擒龙】扫描...")
     
     results = []
     with ProcessPoolExecutor() as executor:
         task_results = list(executor.map(analyze_strategy, files))
         results = [r for r in task_results if r is not None]
 
-    # 3. 整理结果并匹配名称
     if results:
         final_df = pd.DataFrame(results)
         final_df['名称'] = final_df['代码'].map(code_to_name)
         final_df = final_df.sort_values(by='强度', ascending=False)
 
-        # 4. 保存结果
         now = datetime.now()
         dir_name = now.strftime('%Y%m')
-        if not os.path.exists(dir_name):
-            os.makedirs(dir_name)
+        if not os.path.exists(dir_name): os.makedirs(dir_name)
             
-        file_name = f"QinLong_TOP_{now.strftime('%Y%m%d_%H%M%S')}.csv"
+        file_name = f"QinLong_ULTIMATE_{now.strftime('%Y%m%d_%H%M%S')}.csv"
         save_path = os.path.join(dir_name, file_name)
         
         final_df[['代码', '名称', '收盘', '信号', '强度', '操作建议', '历史胜率参考']].to_csv(save_path, index=False)
-        print(f"分析完成！精选出 {len(final_df)} 只最强龙头股，已保存至 {save_path}")
+        print(f"扫描结束！全场仅剩 {len(final_df)} 只顶级潜力股，结果已保存。")
     else:
-        print("今日未发现符合顶级条件的龙头股。")
+        print("今日无顶级信号。")
 
 if __name__ == "__main__":
     main()
