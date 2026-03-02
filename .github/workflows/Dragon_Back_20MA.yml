@@ -7,7 +7,7 @@ on:
       - 'Dragon_Back_20MA.py'
       - '.github/workflows/Dragon_Back_20MA.yml'
   schedule:
-    - cron: '46 7 * * 1-5' # 北京时间 15:30 运行
+    - cron: '36 9 * * 1-5' # 北京时间 15:30 运行
 
 jobs:
   filter_stocks:
