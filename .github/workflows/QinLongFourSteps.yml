@@ -7,7 +7,7 @@ on:
       - 'QinLongFourSteps.py'
       - '.github/workflows/QinLongFourSteps.yml'
   schedule:
-    - cron: '42 7 * * 1-5' # 北京时间 15:30 (UTC 7:30)
+    - cron: '42 9 * * 1-5' # 北京时间 15:30 (UTC 7:30)
 
 jobs:
   filter_and_analyze:
