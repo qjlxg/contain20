@@ -8,7 +8,7 @@ on:
       - 'Doji_Strategy_Workflow.py'             # 脚本变动时自动运行
       - '.github/workflows/Doji_Strategy_Workflow.yml' # 工作流变动时运行
   schedule:
-    - cron: '23 7 * * *' # 北京时间每日 15:30 自动复盘 (15:30 UTC+8 = 07:30 UTC)
+    - cron: '23 9 * * *' # 北京时间每日 15:30 自动复盘 (15:30 UTC+8 = 07:30 UTC)
 
 jobs:
   build_and_run:
